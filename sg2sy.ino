@@ -2,6 +2,7 @@
 #include <BLEUtils.h>
 #include <BLEScan.h>
 #include <BLEAdvertisedDevice.h>
+#include <Adafruit_NeoPixel.h>
 
 /*  
  * Title: So Good To See You!
@@ -11,6 +12,8 @@
  * Technologies
  *  ESP32 Microcontroller - Detects broadcasting iBeacons via Bluetooth, and controls the lights
  *  Gimbal Beacons - Small iBeacons that broadcast their presence for months.
+ *  
+ *  15b87d78-d638-45c7-8dde-ace5fb6468f3
  * 
  * Author: Oliver Wilkie, oliwilks@
  */
@@ -33,11 +36,19 @@ typedef struct {
 
 typedef struct {
   String name;
+  bool here;
 } Person;
 
 typedef struct {
+  int r;
+  int g;
+  int b;
+} Color;
+
+typedef struct {
   Person person;
-  unsigned int ibeacon_minor;  
+  unsigned int ibeacon_minor;
+  Color color;  
 } Configuration;
 
 // Global variables
@@ -53,38 +64,49 @@ int num_configs = 4;
 Configuration configs[] =
 {
   {
-    {"Oli"}, 0
+    {"Oli", false}, 0, {255,0,0}
   },
   {
-    {"Max"}, 1
+    {"Max", false}, 1, {0,255,0}
   },  
   {
-    {"Trini"}, 2
+    {"Trini", false}, 2, {0,255,255}
   },  
   {
-    {"Collin"}, 3
+    {"Collin", false}, 3, {255,165,0}
   }    
 };
+
+Person unknown = {"Unknown Person", false};
 
 /*
  * Lighting Logic
  */
 
+ // Which pin on the Arduino is connected to the NeoPixels?
+// On a Trinket or Gemma we suggest changing this to 1
+#define PIN            18
+
+// How many NeoPixels are attached to the Arduino?
+#define NUMPIXELS      8
+
+// When we setup the NeoPixel library, we tell it how many pixels, and which pin to use to send signals.
+// Note that for older NeoPixel strips you might need to change the third parameter--see the strandtest
+// example for more information on possible values.
+Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
 
 /*
  * Bluetooth Logic
  */
 
-Person findPersonMatchingIBeacon(IBeacon iBeacon) {
+Person* findPersonMatchingIBeacon(IBeacon iBeacon) {
   for (int i = 0; i < num_configs; i++) {
     Configuration c = configs[i];
     if (c.ibeacon_minor == iBeacon.minor) {
-      return c.person; 
+      return &(configs[i].person); 
     }  
   }
-  return Person {
-    "Unknown Person"  
-  };
+  return &unknown;
 }
 
 
@@ -151,9 +173,10 @@ class MyDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
       Serial.println(beacon.major); 
       Serial.print("Minor: "); 
       Serial.println(beacon.minor);
-      Person person = findPersonMatchingIBeacon(beacon);
+      Person *person = findPersonMatchingIBeacon(beacon);
       Serial.print("Person: "); 
-      Serial.println(person.name);
+      Serial.println(person->name);
+      person->here = true;
       device.getScan()->stop(); 
     }
   }
@@ -162,7 +185,7 @@ class MyDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
 void Bluetooth() {
   Serial.println("BLE Scan restarted.....");
   BLEScanResults scanResults = pScan->start(5);
-  delay(10000);
+  delay(1000);
 }
 
 /*
@@ -178,17 +201,58 @@ void setup() {
   // Turn on Bluetooth
   BLEDevice::init("");
   
-  // Put the device in Client Mode
-  //pClient = BLEDevice::createClient();
-  
   // Set up callbacks for Scanner
   pScan = BLEDevice::getScan();
   pScan->setAdvertisedDeviceCallbacks(new MyDeviceCallbacks());
+
+  // Turn on lighting
+  pixels.begin(); // This initializes the NeoPixel library.
   
   Serial.println("Finished Setup");
+}
+
+Color colorForPixel(int pixel) {
+  Color defaultColor = {255,192,203}; // Moderately bright pink color.
+
+  int person = pixel/2;
+  Serial.print("Looking for person:");
+  Serial.print(person);
+  Serial.print("Is the person here?");
+  Serial.println(configs[person].person.here);
+  if (configs[person].person.here) {
+    return configs[person].color;  
+  }
+  
+  return defaultColor;
+}
+
+void lightingLoop() {
+  for(int i=0;i<NUMPIXELS;i++){
+
+    // pixels.Color takes RGB values, from 0,0,0 up to 255,255,255
+    Color color = colorForPixel(i);
+    pixels.setPixelColor(i, pixels.Color(color.r,color.g,color.b)); // Moderately bright green color.
+
+    pixels.show(); // This sends the updated pixel color to the hardware.
+
+    delay(50); // Delay for a period of time (in milliseconds).
+
+  }
+
+    for(int i=0;i<NUMPIXELS;i++){
+
+    // pixels.Color takes RGB values, from 0,0,0 up to 255,255,255
+    pixels.setPixelColor(NUMPIXELS-1-i, pixels.Color(0,0,0)); // Moderately bright green color.
+
+    pixels.show(); // This sends the updated pixel color to the hardware.
+
+    delay(50); // Delay for a period of time (in milliseconds).
+
+  }   
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
   Bluetooth();
+  lightingLoop();
 }
