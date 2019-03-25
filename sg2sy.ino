@@ -3,6 +3,7 @@
 #include <BLEScan.h>
 #include <BLEAdvertisedDevice.h>
 #include <Adafruit_NeoPixel.h>
+#include <TaskScheduler.h>
 
 /*  
  * Title: So Good To See You!
@@ -182,33 +183,14 @@ class MyDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
   }
 };
 
-void Bluetooth() {
-  Serial.println("BLE Scan restarted.....");
-  BLEScanResults scanResults = pScan->start(5);
-  delay(1000);
-}
-
-/*
- * Core Arduino Methods
- */
-
-void setup() {
-  // put your setup code here, to run once:
-  // Log at this frequency
-  Serial.begin(115200);
-  Serial.println("Begin Setup");
-  
-  // Turn on Bluetooth
-  BLEDevice::init("");
-  
-  // Set up callbacks for Scanner
-  pScan = BLEDevice::getScan();
-  pScan->setAdvertisedDeviceCallbacks(new MyDeviceCallbacks());
-
-  // Turn on lighting
-  pixels.begin(); // This initializes the NeoPixel library.
-  
-  Serial.println("Finished Setup");
+void bluetooth() {
+  Serial.println("BLE Scan started.....");
+  unsigned long StartTime = millis();
+  BLEScanResults scanResults = pScan->start(2);
+  unsigned long CurrentTime = millis();
+  unsigned long ElapsedTime = CurrentTime - StartTime;
+  Serial.println("BLE Scan ended.....");
+  Serial.println(ElapsedTime);
 }
 
 Color colorForPixel(int pixel) {
@@ -226,7 +208,8 @@ Color colorForPixel(int pixel) {
   return defaultColor;
 }
 
-void lightingLoop() {
+void lighting() {
+  Serial.println("Running lighting sequence");
   for(int i=0;i<NUMPIXELS;i++){
 
     // pixels.Color takes RGB values, from 0,0,0 up to 255,255,255
@@ -251,8 +234,38 @@ void lightingLoop() {
   }   
 }
 
+Task bluetoothTask(10000, TASK_FOREVER, &bluetooth);
+Task lightingTask(0, TASK_FOREVER, &lighting);
+Scheduler runner;
+
+
+/*
+ * Core Arduino Methods
+ */
+
+void setup() {
+  // Log at this frequency
+  Serial.begin(115200);
+  Serial.println("Begin Setup");
+  
+  // Turn on Bluetooth
+  BLEDevice::init("");
+  pScan = BLEDevice::getScan();
+  pScan->setAdvertisedDeviceCallbacks(new MyDeviceCallbacks());
+
+  // Turn on lighting
+  pixels.begin(); // This initializes the NeoPixel library.
+
+  // Turn on tasks
+  runner.init();
+  runner.addTask(bluetoothTask);
+  runner.addTask(lightingTask);
+  bluetoothTask.enable();
+  lightingTask.enable();
+  
+  Serial.println("Finished Setup");
+}
+
 void loop() {
-  // put your main code here, to run repeatedly:
-  Bluetooth();
-  lightingLoop();
+  runner.execute();
 }
